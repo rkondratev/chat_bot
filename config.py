@@ -1,6 +1,6 @@
 ACTION_MODE = "delete"  
 #ACTION_MODE = "notify_admin"  
-ADMIN_USERNAME = "admin"
+ADMIN_USERNAME = "user"
 
 STOP_WORDS = [
     "казино", "заработок онлайн", "биткоин", "бесплатно", 

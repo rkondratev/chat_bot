@@ -3,13 +3,19 @@ import logging
 import time
 
 from aiogram import Router, F
-from aiogram.types import ChatMemberUpdated, CallbackQuery
+from aiogram.types import ChatMemberUpdated, CallbackQuery, Message
 from aiogram.filters import ChatMemberUpdatedFilter
 from aiogram.filters.chat_member_updated import IS_MEMBER, IS_NOT_MEMBER
 from aiogram.exceptions import TelegramBadRequest
 
-from config import VERIFICATION_TIMEOUT
+from config import (
+    VERIFICATION_TIMEOUT,
+    ACTION_MODE,
+    ADMIN_USERNAME,
+    STOP_WORDS
+)
 from keyboards import get_verification_keyboard
+from llm import check_with_llm
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -73,3 +79,69 @@ async def on_verify_callback(callback: CallbackQuery):
 
         await callback.answer("Вы верифицированы.", show_alert=True)
         verified_users.add(user_id_to_verify)
+
+@router.message(F.text)
+async def check_message(message: Message):
+    user_id = message.from_user.id
+
+    if user_id not in verified_users:
+        return
+
+    text = message.text.lower()
+
+    found_keyword = next(
+        (word for word in STOP_WORDS if word.lower() in text),
+        None
+    )
+
+    if not found_keyword:
+        return
+
+    logger.warning(
+        f"Suspicious message from {user_id}. "
+        f"Keyword: {found_keyword}"
+    )
+
+    is_spam = await check_with_llm(message.text)
+
+    if not is_spam:
+        return
+
+    logger.warning(
+        f"SPAM DETECTED | "
+        f"user={user_id} | "
+        f"text={message.text}"
+    )
+
+    if ACTION_MODE == "delete":
+        try:
+            await message.delete()
+
+            await message.bot.ban_chat_member(
+                chat_id=message.chat.id,
+                user_id=user_id
+            )
+
+            await message.bot.unban_chat_member(
+                chat_id=message.chat.id,
+                user_id=user_id,
+                only_if_banned=True
+            )
+
+        except Exception as e:
+            logger.error(
+                f"Failed to remove spammer: {e}"
+            )
+
+    elif ACTION_MODE == "notify_admin":
+        username = (
+            f"@{message.from_user.username}"
+            if message.from_user.username
+            else str(user_id)
+        )
+
+        await message.answer(
+            f"@{ADMIN_USERNAME}, обнаружен спам.\n\n"
+            f"Пользователь: {username}\n"
+            f"Сообщение:\n{message.text}"
+        )
