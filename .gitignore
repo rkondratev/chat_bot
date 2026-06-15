@@ -10,7 +10,7 @@ __pycache__/
 spam.log
 
 # databases
-bot_database.d
+bot_database.db
 
 # Distribution / packaging
 .Python
